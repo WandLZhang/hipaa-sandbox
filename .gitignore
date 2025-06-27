@@ -1,6 +1,7 @@
 # Original monolithic files (preserved for reference)
 deep-research.txt
 gcp-asu-hipaa-implementation.sh
+make-executable.sh
 
 # Temporary files
 *.tmp
