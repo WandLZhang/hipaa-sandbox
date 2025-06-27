@@ -1,0 +1,95 @@
+meta {
+  title "HIPAA/FedRAMP Healthcare Research Environment - Actual Implementation"
+}
+
+elements {
+  card pc {name "Corporate Users"}
+  card router {name "On-Premises Network"}
+  
+  gcp {
+    card vpn {name "HA-VPN Gateway"}
+    card dns {name "Private DNS (googleapis.com)"}
+    
+    card access_context_manager {name "VPC Service Controls"}
+    card kms {name "CMEK Keys (4)"}
+    card secret_manager {name "Secret Manager"}
+    
+    group logging_central {
+      name "Health Logging Central Project"
+      card storage as log_bucket {
+        name "Audit Log Bucket"
+        description "Long-term retention"
+      }
+      card bigquery as log_bq {
+        name "Audit Log Dataset"
+        description "Log analytics"
+      }
+      card security_command_center {name "SCC Premium"}
+    }
+    
+    group secure_perimeter {
+      name "Health Secure Perimeter (VPC-SC)"
+      card vpc {name "Health Secure VPC"}
+      group production_project {
+        name "Health Sciences Production"
+        card storage as phi_bucket {
+          name "PHI Data Bucket"
+          description "CMEK Encrypted"
+        }
+        card bigquery as raw_bq {
+          name "healthcare_raw dataset"
+          description "Raw PHI data"
+        }
+        card bigquery as governance_bq {
+          name "data_governance dataset"
+          description "Governance metadata"
+        }
+      }
+    }
+    
+    group research_perimeter {
+      name "Health Research Perimeter (VPC-SC)"
+      group research_project {
+        name "Health Research Lake"
+        card bigquery as research_bq {
+          name "healthcare_research dataset"
+          description "De-identified views only"
+        }
+        card storage as research_bucket {
+          name "Research Data Bucket"
+          description "Analysis outputs"
+        }
+      }
+    }
+    
+    card data_loss_prevention {
+      name "DLP API"
+      description "Scans & de-identifies PHI"
+    }
+  }
+}
+
+paths {
+  pc --> vpn
+  router <--> vpn
+  vpn --> vpc
+  
+  vpc --> access_context_manager
+  access_context_manager --> secure_perimeter
+  access_context_manager --> research_perimeter
+  
+  production_project --> logging_central
+  research_project --> logging_central
+  
+  phi_bucket --> raw_bq
+  raw_bq --> data_loss_prevention
+  data_loss_prevention --> research_bq
+  
+  kms --> phi_bucket
+  kms --> raw_bq
+  kms --> research_bq
+  kms --> research_bucket
+  
+  production_project --> security_command_center
+  research_project --> security_command_center
+}
