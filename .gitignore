@@ -1,7 +1,7 @@
 # Original monolithic files (preserved for reference)
-deep-research.txt
 gcp-asu-hipaa-implementation.sh
 make-executable.sh
+customer-terraform/
 
 # Temporary files
 *.tmp

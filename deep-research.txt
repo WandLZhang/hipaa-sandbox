@@ -1,0 +1,436 @@
+
+Architectural Design and Configuration for a Secure, Compliant Research Environment on Google Cloud
+
+
+Executive Summary
+
+
+Statement of the Challenge
+
+Arizona State University (ASU) seeks to establish a new, highly secure domain within its existing Google Cloud organization. The primary objective is to host sensitive data, including Personally Identifiable Information (PII) and Protected Health Information (PHI) for health and sciences research. This initiative mandates adherence to the stringent compliance frameworks of the Federal Risk and Authorization Management Program (FedRAMP) at the Moderate impact level and the Health Insurance Portability and Accountability Act (HIPAA). Key architectural decisions must be made regarding the virtual private cloud (VPC) structure, specifically whether the existing Shared VPC model is appropriate, and the role of VPC Service Controls in providing robust data exfiltration protection.
+
+Synopsis of the Proposed Solution
+
+The recommended solution is a multi-layered, defense-in-depth architecture designed to provide a high-assurance environment that is both secure and auditable. The foundation of this architecture is a dedicated compliance environment programmatically enforced by Google Cloud's Assured Workloads service. This environment will be isolated within a new, dedicated VPC network, moving away from the more permissive Shared VPC model for this specific workload. This isolated network will be protected by a robust VPC Service Controls perimeter, which establishes a clear, auditable, and software-defined boundary to prevent the exfiltration of sensitive data. This comprehensive approach addresses all stated requirements, providing a secure foundation for current needs and a scalable framework for future research initiatives.
+
+Summary of Key Recommendations
+
+A detailed analysis of the university's requirements and the capabilities of Google Cloud services leads to the following primary recommendations:
+Mandatory Adoption of Assured Workloads: The immediate first step must be the creation of an Assured Workloads folder configured with the FedRAMP Moderate control package. This service is the foundational element that programmatically enforces the necessary compliance guardrails, such as service restrictions and data residency, which are non-negotiable for a FedRAMP-compliant environment.1
+Dedicated VPC Architecture: For this high-compliance workload, the existing Shared VPC model must be rejected in favor of a new, dedicated VPC. This approach provides maximum network isolation, establishes a clear and defensible compliance boundary, and simplifies security policy management and auditing, which are critical for both FedRAMP and HIPAA.2
+Implementation of VPC Service Controls: VPC Service Controls is confirmed as the correct and essential Google Cloud service for preventing data exfiltration. The recommended configuration involves establishing a service perimeter around the new environment, defining granular ingress and egress rules for controlled data exchange, and integrating with existing on-premises connectivity via a secure virtual IP to extend the security boundary.4
+Comprehensive Logging and Monitoring: A robust logging and monitoring framework is required for continuous compliance. This includes enabling Cloud Audit Logs for all data access, creating centralized log sinks to a secure BigQuery dataset for immutable retention and analysis, and activating Security Command Center Premium to continuously monitor the environment against FedRAMP and HIPAA control benchmarks.6
+Phased Implementation: A structured, phased implementation is proposed. Phase 1 focuses on building the foundational secure environment to host the initial workloads. Phase 2 outlines the architecture for a future research data lake, which will leverage data de-identification pipelines and a multi-perimeter security model to enable secure, controlled data sharing for researchers.
+
+Architectural Foundation for a FedRAMP Moderate Environment
+
+Establishing an environment that meets federal compliance standards requires a deliberate, architecture-first approach. The configuration must move beyond manual hardening to an enforced, automated compliance posture from its inception. This section details the foundational components required to build a workload environment that aligns with FedRAMP Moderate requirements on Google Cloud.
+
+Deconstructing FedRAMP Moderate Requirements
+
+The Federal Risk and Authorization Management Program (FedRAMP) is a U.S. government-wide program that provides a standardized approach to security assessment, authorization, and continuous monitoring for cloud products and services.1 Codified by Congress in 2022, its purpose is to ensure that cloud services used by federal agencies have adequate safeguards for processing unclassified government information.1
+The program defines three impact levels—Low, Moderate, and High—based on the potential impact of a security breach on an organization's operations, assets, or individuals.9 The
+Moderate Impact Level is appropriate for the vast majority of federal cloud applications and is designated for systems where a loss of Confidentiality, Integrity, or Availability (CIA) could result in "serious adverse effects".9 These effects can include significant operational damage, financial loss, or non-life-threatening individual harm, a category that aligns directly with the customer's use case of handling sensitive PII and health and sciences data.9
+A critical concept in this context is the shared responsibility model.10 Google Cloud is responsible for the security
+of the cloud, providing a physical infrastructure and a set of services that have received a FedRAMP Moderate Authority to Operate (ATO) from the FedRAMP Board.1 However, the customer, ASU, is ultimately responsible for security
+in the cloud. This includes evaluating their own compliance and ensuring the applications and environments they build on top of Google Cloud are configured and secured according to the FedRAMP Moderate baseline controls.8
+
+Configuration Deep Dive: Assured Workloads for FedRAMP
+
+To facilitate the customer's side of the shared responsibility model, Google Cloud provides Assured Workloads. This service is not merely a recommendation; it is the required starting point for any workload aiming for FedRAMP compliance on the platform.1 Assured Workloads is a specialized service that simplifies the creation of secure and compliant environments by programmatically enforcing controls. It delivers what can be described as a "Software Defined Community Cloud," allowing customers to leverage Google's public cloud infrastructure while adhering to specific regulatory requirements.1
+The implementation process for Assured Workloads is precise and foundational to the entire architecture:
+Create a New GCP Folder: A new, dedicated folder must be created within the ASU Google Cloud organization. This folder will house all projects and resources for the secure health and sciences domain. It is important to note that Assured Workloads control packages can only be applied at the time of folder creation; they cannot be applied to existing folders. This requirement reinforces the need for a greenfield approach for this new secure environment.13
+Create the Assured Workloads Environment: Within the Google Cloud Console, navigate to the Assured Workloads service. Initiate the creation of a new environment, targeting the newly created folder.
+Select the FedRAMP Moderate Control Package: During the environment creation process, select the FedRAMP Moderate control package from the list of available compliance regimes.13 This is the most critical step in the process.
+Selecting this control package automatically applies a series of restrictive Organization Policies to the folder and any projects created within it. These policies act as programmatic guardrails that enforce key compliance controls without manual intervention 13:
+Service Restrictions: The gcp.restrictServiceUsage organization policy is configured to only permit the activation and use of Google Cloud services that have successfully achieved a FedRAMP Moderate authorization. This prevents developers from accidentally using a non-compliant service with sensitive data.13
+Data Residency and Location Controls: The gcp.resourceLocations organization policy is enforced to restrict the creation of resources to specific U.S. regions that are in scope for FedRAMP. This directly addresses data sovereignty requirements, ensuring that sensitive data does not leave defined geographical boundaries.13 This is a critical control, as the global nature of cloud could otherwise lead to data being stored in regions that do not meet federal requirements.16
+Personnel Controls: The control package ensures that any Google support personnel who might need to access the environment for support purposes meet the personnel screening requirements stipulated by the FedRAMP Moderate baseline.15
+Encryption Standards: The environment is configured to enforce strong encryption standards, including support for FIPS 140-2 validated encryption modules.17
+Furthermore, Assured Workloads provides continuous compliance monitoring. The service scans the environment in real-time and generates alerts in Security Command Center if any action or configuration change violates the enforced compliance posture. This provides the security team with immediate visibility into configuration drift and a clear path to remediation, which is essential for maintaining an ATO.1
+
+Curated List of FedRAMP Moderate Authorized Services
+
+The Assured Workloads folder will restrict the environment to only FedRAMP Moderate-authorized services. For the university's planned workload, the following key services are available and recommended as a starting point. The official FedRAMP Marketplace and Google's compliance documentation provide the most current and exhaustive list, which includes over 64 services at the Moderate level.18
+Compute:
+Compute Engine: For deploying virtual machines. This includes Confidential VMs, which encrypt data while it is in use (in memory), providing an additional layer of protection for highly sensitive computations.20
+Google Kubernetes Engine (GKE): For deploying and managing containerized applications.21
+Storage:
+Cloud Storage: The primary object storage service, ideal for landing zones, backups, and storing unstructured data like research files.20
+Filestore: A managed NFS file storage service.
+Persistent Disk: Block storage for Compute Engine VMs.
+Databases:
+Cloud SQL: A managed relational database service for MySQL, PostgreSQL, and SQL Server.
+BigQuery: A serverless, highly scalable data warehouse that will be the core of the Phase 2 research data lake.
+Spanner: A globally distributed, strongly consistent relational database.
+Networking:
+Virtual Private Cloud (VPC): The foundational networking service.
+Cloud Load Balancing, Cloud DNS, Cloud Armor: For traffic management, DNS services, and WAF/DDoS protection.
+Cloud VPN, Cloud Interconnect: For secure hybrid connectivity to on-premises environments.
+Security and Identity:
+Identity and Access Management (IAM): For controlling access to all resources.
+Cloud Key Management Service (KMS): For managing encryption keys.
+Secret Manager: For securely storing secrets like API keys and passwords.
+Security Command Center: For centralized threat and vulnerability management.
+VPC Service Controls: For data exfiltration prevention.
+Data Analytics and Operations:
+Dataflow, Pub/Sub: For building real-time data processing and streaming pipelines.
+Cloud Logging, Cloud Monitoring: For comprehensive logging, monitoring, and alerting.
+By building within an Assured Workloads environment, the university ensures that its architecture is constructed exclusively from these compliant service primitives, dramatically simplifying the path to achieving and demonstrating FedRAMP compliance.
+
+Implementing a Data Exfiltration Defense with VPC Service Controls
+
+A primary concern for the university is preventing the unauthorized removal of sensitive data, such as restricting access to Cloud Storage buckets to within a specific project boundary. This section validates VPC Service Controls as the appropriate technology for this requirement and provides a detailed guide for its design and configuration within the FedRAMP-compliant foundation.
+
+Validating VPC Service Controls for Data Exfiltration Prevention
+
+VPC Service Controls is a Google Cloud security feature that enables the creation of a "service perimeter" around a defined set of Google Cloud projects and services.4 The fundamental purpose of this perimeter is to mitigate the risk of data exfiltration. It achieves this by establishing a virtual, software-defined boundary that controls the flow of data to and from the Google-managed services it protects.5 For example, a properly configured perimeter can prevent a user or service, even one with valid IAM permissions, from copying data from a protected Cloud Storage bucket inside the perimeter to a public bucket on the internet.5
+It is essential to understand that VPC Service Controls provides a layer of defense that is independent of and complementary to Identity and Access Management (IAM).5 This creates a powerful defense-in-depth security posture.
+IAM controls who can access a resource (identity-based control).
+VPC Service Controls controls the context of that access (context-based control), such as the network location, device type, or IP address of the requester.
+This dual-control mechanism is highly effective against specific threats. For instance, if an attacker steals a service account key that has IAM permissions to read a Cloud Storage bucket, they still cannot access the data from their own machine outside the trusted network, because the VPC Service Controls perimeter will block the request based on its unauthorized location.5 Similarly, it protects against accidental public exposure of data due to misconfigured IAM policies, as the perimeter provides a backstop security guarantee.5
+Given these capabilities, VPC Service Controls is unequivocally the correct and recommended Google Cloud native service to meet the university's requirement of preventing data from leaving its intended project and service boundary.
+
+Perimeter Design and Configuration
+
+The implementation of VPC Service Controls begins with the design of the service perimeter itself.
+Perimeter Type: A Regular Perimeter is the recommended type for this use case.4 This perimeter will be configured at the organization level, providing centralized management, but will be specifically scoped to enclose the new project(s) created within the FedRAMP Moderate Assured Workloads folder.
+Dry-Run Mode: It is a critical best practice to create the perimeter initially in Dry-Run Mode.4 This mode does not enforce the perimeter's rules but instead logs all potential violations to Cloud Audit Logging. This allows the university's technical team to analyze all legitimate access patterns—from developers, automated systems, and on-premises services—and create the necessary ingress rules before switching to enforcement mode. This phased approach is crucial for preventing the disruption of essential services and workflows.5 The team should conduct comprehensive tests of all use cases to trigger all possible perimeter scenarios while in dry-run mode.25
+Restricted Services: The perimeter must be configured to protect the specific Google Cloud services that will handle sensitive data. The principle of least privilege should apply here; only services necessary for the workload should be included. A recommended initial list includes:
+storage.googleapis.com (Cloud Storage)
+bigquery.googleapis.com (BigQuery)
+compute.googleapis.com (Compute Engine)
+sqladmin.googleapis.com (Cloud SQL)
+logging.googleapis.com (Cloud Logging)
+monitoring.googleapis.com (Cloud Monitoring)
+When a service is added to the "Restricted Services" list, all API calls to that service are intercepted by the VPC Service Controls enforcement point and evaluated against the perimeter's policies.4
+
+Designing Access Levels and Ingress/Egress Rules
+
+Once the perimeter boundary is defined, access policies are crafted using Access Levels and Ingress/Egress rules. These policies define the specific conditions under which the perimeter can be crossed.
+Access Levels: An Access Level is a reusable definition of attributes that a request must possess, such as its source IP address or the identity of the user. They are the building blocks of context-aware access.5 For this architecture, the following Access Levels should be created using the Access Context Manager:
+on_prem_network: An Access Level containing the CIDR ranges of the university's on-premises network that connects via the HA-VPN.
+asu_corp_network: An Access Level containing the trusted public IP ranges of the ASU campus network from which administrators and authorized users will access the environment.
+Ingress Rules: Ingress rules define the conditions for allowing traffic from outside the perimeter to access protected resources inside. The rules should be specific and adhere to least privilege.
+Rule 1: Authorized Administrator Access:
+From: Identities (users/groups) within the ASU.edu organization.
+To: All projects and services within the perimeter.
+Conditions: The request must originate from an IP address matching either the on_prem_network OR the asu_corp_network Access Level. This ensures that even authorized university personnel can only manage the secure environment from trusted network locations.
+Rule 2: On-Premises Application Access:
+From: A specific service account used by an on-premises application that needs to interact with services in the perimeter.
+To: Specific projects and services (e.g., a specific Cloud Storage bucket) required by the application.
+Conditions: The request must originate from an IP address matching the on_prem_network Access Level.
+Egress Rules: Egress rules control access from within the perimeter to resources outside. For a high-security environment, these rules should be maximally restrictive. The recommended initial configuration is to have no egress rules, effectively blocking all outbound API calls from services inside the perimeter to any resource outside of it. Egress rules should only be added for specific, audited, and approved use cases, such as the controlled export of de-identified data to a partner organization, which will be discussed in the Phase 2 architecture.
+
+Hybrid Connectivity Integration with the restricted.googleapis.com VIP
+
+A critical piece of the security puzzle for a hybrid environment is ensuring that traffic from on-premises is subject to the same rigorous controls as traffic originating in the cloud. This is achieved by forcing on-premises API requests through a special Virtual IP (VIP) that is integrated with VPC Service Controls.
+Google provides two main VIPs for private API access: private.googleapis.com and restricted.googleapis.com. While both offer private routing over Google's network, the restricted.googleapis.com VIP is the correct choice for this architecture. It is explicitly designed to work with VPC Service Controls and will deny access to any Google API that is not supported by the service, thereby preventing potential data exfiltration through an unprotected service endpoint.27
+The configuration to extend the perimeter to the on-premises network involves these steps:
+On-Premises DNS Configuration: In the university's on-premises DNS servers, a private zone for googleapis.com must be configured. All requests for *.googleapis.com should be resolved to the IP address range for the restricted VIP: 199.36.153.4/30.27
+Cloud Router BGP Advertisement: The Cloud Router instance associated with the HA-VPN connection to the on-premises network must be configured to advertise the 199.36.153.4/30 IP address range to the on-premises routers via BGP.27 This ensures that the on-premises network knows how to route traffic for Google APIs back through the VPN tunnel.
+VPC Network Routing: Within the dedicated VPC for the secure domain, a route must exist that directs traffic with the destination 199.36.153.4/30 to the default-internet-gateway as the next hop. Although the next hop is named "internet-gateway," this traffic is routed privately across Google's backbone network to the appropriate API service endpoint and does not traverse the public internet.27
+This configuration creates a secure, controlled path for all on-premises interactions with Google Cloud. When a system on the ASU on-premises network attempts to call a Google API (e.g., to upload a file to Cloud Storage), the DNS resolves to the restricted VIP. The network routes this traffic through the HA-VPN tunnel into the dedicated VPC. Because this VPC is part of the service perimeter, the API request is intercepted by VPC Service Controls and is fully evaluated against all ingress, egress, and access level policies before being allowed to proceed.5 This effectively makes the on-premises network a trusted source (as defined by the access level) but still subjects all its data movement to the strict policies of the perimeter, achieving a robust and defensible hybrid security posture.
+
+Network Architecture: Dedicated vs. Shared VPC for Compliant Workloads
+
+The choice of network architecture is a foundational decision that has significant implications for security, compliance, and operational manageability. The university currently utilizes a Shared VPC model and is rightly questioning its suitability for a new workload with stringent compliance requirements. This section provides a detailed analysis and a firm recommendation on the optimal VPC model for the secure health and sciences domain.
+
+Comparative Analysis of VPC Models
+
+Google Cloud offers two primary models for organizing Virtual Private Cloud networks within an organization, each with distinct advantages and trade-offs.
+Shared VPC: This model enables an organization to connect resources from multiple projects to a common VPC network, allowing them to communicate with each other securely and efficiently using internal IP addresses. A central "host project" is designated to own and manage the network resources, such as subnets, routes, and firewalls. Other "service projects" are then attached to this host project and granted permissions to deploy resources (like Compute Engine VMs) into the shared network.2 This model is beneficial for large organizations as it allows for centralized network administration by a dedicated team, simplifies hybrid connectivity by requiring only a single VPN or Interconnect in the host project, and can reduce network management overhead in general enterprise use cases.2
+Dedicated VPC: This is the default model in Google Cloud, where each project contains its own independent VPC network. This architecture provides the highest possible degree of network isolation between projects, as each VPC is a distinct and separate L3 routing domain.2 Communication between dedicated VPCs requires explicit configuration, such as VPC Network Peering or using Network Connectivity Center.
+While Shared VPC offers operational convenience, it introduces a fundamental conflict when applied to high-security, high-compliance workloads. The model creates a broad trust boundary where all attached service projects, regardless of their individual sensitivity levels, share the same network fabric. This increases the potential "blast radius" of a security compromise—an incident in a less-secure service project could potentially impact other projects on the same network. Furthermore, it complicates firewall rule management and makes auditing more difficult, as security posture depends on the combined policies of the host project and all service projects.2 The university's concern that this model may be "overly permissive" is well-founded in this context.
+
+Recommendation: A Dedicated VPC for the Secure Domain
+
+Based on the stringent requirements of FedRAMP Moderate and HIPAA, the unequivocal recommendation is that the new secure domain for health and sciences data must be built using a dedicated VPC. This VPC will be created within a new, dedicated GCP project, which itself will reside inside the FedRAMP Moderate Assured Workloads folder established in the previous section.
+This recommendation is justified by several critical factors that directly map to compliance and security best practices:
+Maximum Isolation: A dedicated VPC provides the strongest possible network isolation boundary for the sensitive workload. This is a core security principle and a control that is straightforward to explain and defend to auditors during a compliance assessment.2
+Clear Compliance Boundary: This architecture creates a simple, unambiguous compliance boundary. The project itself becomes the container for the entire compliant system. All resources, network configurations, firewall rules, IAM policies, and audit logs related to the FedRAMP and HIPAA workload are self-contained. This dramatically simplifies the process of demonstrating compliance and reduces the scope of an audit.
+Simplified and Secure Policy Management: All network and security policies, including firewall rules, are managed directly within the secure project's context. This aligns perfectly with the principle of least privilege, as there is no risk of overly permissive rules inherited from a central host project inadvertently exposing the secure environment.
+Reduced Blast Radius: The dedicated VPC architecture contains the impact of any potential security incident or misconfiguration. An issue in the university's existing SFTP environment or any other workload cannot directly propagate at the network level to the new secure domain.
+Auditability: The simplicity of the model makes it far easier to audit. Security teams and third-party assessors can review a single project and its associated VPC to validate the entire network security posture, rather than needing to correlate configurations and logs across a host project and multiple service projects.
+The following table summarizes the comparison and reinforces the rationale for selecting a dedicated VPC model for this specific use case.
+Feature / Axis
+Dedicated VPC (Recommended)
+Shared VPC
+Justification for FedRAMP/HIPAA
+Compliance Boundary
+Clearly defined at the project level. Simple to audit.
+Diffuse. Spans multiple service projects and a host project.
+A clear, defensible boundary is paramount for passing FedRAMP and HIPAA audits.
+Security Isolation
+Maximum. The network is fully isolated from other projects.
+Partial. Resources share the same L2/L3 network fabric.
+Isolation is a key control for protecting high-impact data as required by compliance frameworks.2
+Blast Radius
+Contained to the single secure project.
+High. A compromise in one service project can potentially impact others on the same network.
+Minimizing the blast radius of a potential incident is a core tenet of secure system design.
+Policy Complexity
+Simple. All firewall and network policies are self-contained and scoped to the workload.
+Complex. Requires careful management of host and service project permissions and potential for rule conflicts.
+Simplicity reduces the risk of human error and misconfiguration, which can lead to compliance violations.
+Alignment with Least Privilege
+High. Network permissions are scoped only to the resources and identities within the secure project.
+Lower. Service projects may inherit overly broad network access from the host project.
+Least privilege is a foundational security principle required by both FedRAMP and HIPAA.
+Auditability
+Straightforward. All network logs and configurations are located within a single project.
+Complex. Requires correlating logs, routes, and firewall policies across multiple projects.
+Ease of audit reduces the time and cost of compliance activities and improves the accuracy of assessments.
+
+For workloads that demand the highest levels of security and the clearest path to compliance, the operational benefits of a Shared VPC are significantly outweighed by the security, isolation, and auditability advantages of a dedicated VPC. The choice of a dedicated VPC is not merely a technical preference; it is a strategic decision to de-risk the compliance process and establish a more defensible security posture from the outset.
+
+Satisfying HIPAA Requirements: Technical Controls and Data Protection
+
+In addition to FedRAMP, the university's workload must comply with the Health Insurance Portability and Accountability Act (HIPAA), which establishes federal standards for the privacy and security of Protected Health Information (PHI). This section details the necessary agreements and technical controls required to handle PHI on Google Cloud, including a forward-looking strategy for enabling research through data de-identification.
+
+HIPAA on Google Cloud: BAA and Shared Responsibility
+
+It is crucial to understand that there is no official "HIPAA certification" for a cloud service provider recognized by the U.S. Department of Health and Human Services (HHS).29 Instead, HIPAA compliance is achieved by implementing the required administrative, physical, and technical safeguards outlined in the HIPAA Security Rule, Privacy Rule, and Breach Notification Rule.29
+Google Cloud supports HIPAA compliance and will enter into a Business Associate Agreement (BAA) with customers who are subject to HIPAA.29 A BAA is a legal contract that obligates Google, as a business associate, to appropriately safeguard PHI on behalf of the covered entity (the university). ASU must review and accept this BAA via their Google Cloud console before any PHI is stored, processed, or transmitted using Google Cloud services.
+HIPAA compliance operates under the same shared responsibility model as FedRAMP.29 Google is responsible for the security
+of the cloud, ensuring its infrastructure and covered services meet the necessary security standards. The university is responsible for security in the cloud, which includes:
+Using only HIPAA-covered services for PHI.
+Properly configuring these services with appropriate security controls.
+Managing user access and permissions (IAM).
+Implementing robust logging and monitoring.
+Ensuring the security of the applications they build on the platform.
+
+HIPAA Covered Products
+
+Google maintains a specific list of products that are covered under its BAA and are therefore eligible for use with PHI. The core services recommended in the preceding sections for the FedRAMP environment—including Compute Engine, Cloud Storage, BigQuery, Cloud SQL, VPC, IAM, Cloud KMS, and VPC Service Controls—are all included in Google's HIPAA compliance program.29 The university must ensure that it does not use any service not explicitly covered by the BAA in connection with PHI.29
+
+Technical Best Practices for HIPAA Compliance
+
+The HIPAA Security Rule mandates specific safeguards that can be mapped directly to Google Cloud technical controls. The architecture proposed in this document inherently addresses many of these requirements.
+Access Control: This is a cornerstone of HIPAA. The use of IAM with the principle of least privilege, strong authentication for all users in the ASU.edu domain (including multi-factor authentication), and tightly controlled service account permissions directly addresses this requirement.29
+Audit Controls: The Security Rule requires mechanisms to record and examine activity in information systems that contain or use ePHI. The comprehensive logging strategy detailed in Section 7, which includes enabling both Admin Activity and Data Access audit logs and routing them to a central, immutable store, is essential for meeting this control.29
+Integrity Controls: To protect ePHI from improper alteration or destruction, technical policies and procedures are required. Using Cloud Storage Object Versioning is a recommended best practice, as it provides an archive of all versions of a file and allows for recovery in the case of accidental data deletion or modification.29
+Transmission Security: The architecture must protect ePHI when it is being transmitted over a network. All data in transit between and within Google's data centers is encrypted by default. Furthermore, the use of an HA-VPN for hybrid connectivity ensures that data transmitted between the on-premises environment and Google Cloud is sent over a secure, encrypted IPsec tunnel.33
+Data Encryption: The Security Rule requires ePHI to be rendered unusable, unreadable, or indecipherable to unauthorized individuals. While Google Cloud encrypts all data at rest by default, a best practice for highly sensitive data like PHI is to use Customer-Managed Encryption Keys (CMEK). By using Cloud KMS to create and manage their own encryption keys, the university gains an additional, auditable layer of control over their data's security.29
+
+Data De-identification Strategy for Future Research
+
+A key enabler for the university's Phase 2 goal of a research data lake is the process of de-identification. Under HIPAA, health information that has been properly de-identified is no longer considered PHI and is therefore not subject to the HIPAA Privacy Rule's restrictions on use and disclosure.38 This provides a clear, compliant pathway for making valuable health data available for research.
+HIPAA outlines two methods for de-identification: Expert Determination and Safe Harbor.38 The Safe Harbor method involves removing a specific list of 18 identifiers (e.g., names, geographic subdivisions smaller than a state, all elements of dates directly related to an individual, social security numbers, etc.). Google Cloud's
+Sensitive Data Protection service (formerly Cloud DLP) provides the powerful tools necessary to implement the technical components of the Safe Harbor method at scale.37
+A de-identification pipeline can be constructed as an "airlock" between the raw data environment and the research environment:
+Ingestion: Raw data containing PHI and PII is ingested into the secure, dedicated VPC environment (the Phase 1 architecture).
+Processing: A Dataflow pipeline is triggered to process the new data. This pipeline calls the Sensitive Data Protection API.
+Detection: Sensitive Data Protection scans the data using its library of over 100 built-in infoType detectors to identify sensitive elements like names, locations, and identification numbers.41
+Transformation: Upon detecting sensitive data, the pipeline applies a de-identification transformation. Two key transformations are relevant:
+Masking/Redaction: This involves replacing sensitive characters with a fixed symbol, such as an asterisk (*).40 This is useful for completely obscuring a value.
+Cryptographic Tokenization (Pseudonymization): This is a more advanced and highly recommended technique. It replaces a sensitive value (e.g., a unique patient identifier) with a consistent but non-sensitive "token." This is critical for research because it allows analysts to track all records related to a single, anonymous individual over time (longitudinal analysis) without ever exposing the original, identifiable data.40 The tokenization can be configured to be reversible (if a re-identification process is needed under strict controls) or non-reversible.
+Egress: The fully de-identified dataset is then written to a separate, "clean" Cloud Storage bucket located in the research environment, ready for analysis.
+By architecting this automated pipeline, the university can create a robust, repeatable, and auditable process that unlocks the value of its health data for researchers while rigorously maintaining its HIPAA compliance posture.
+
+Future-Proofing: Architecture for a Secure Research Data Lake
+
+Building on the foundational controls and the data de-identification strategy, this section outlines a concrete, forward-looking architecture for the university's Phase 2 objective: a secure and collaborative research data lake. This design resolves the inherent tension between data protection and data utility, enabling broad research access while maintaining stringent security.
+
+Reference Architecture: The Compliant Data Lakehouse
+
+The recommended architecture for the research environment is a modern data lakehouse. This approach combines the low-cost scalability and flexibility of a data lake with the structured querying, governance, and performance capabilities of a data warehouse.42 This model avoids the creation of disparate data silos and provides a single, unified platform for diverse analytics workloads.42
+The core components of the proposed research data lakehouse are:
+Storage Layer: Cloud Storage will serve as the primary storage layer. It will act as the landing zone for the de-identified datasets produced by the pipeline described in the previous section. Its low cost and high durability make it ideal for storing large volumes of research data.44
+Analytics and Serving Layer: BigQuery will be the central engine for all analytics. Data from the Cloud Storage layer will be loaded into BigQuery or queried directly using federated queries. Researchers will interact almost exclusively with BigQuery's familiar SQL interface, which provides a powerful and accessible way to analyze petabyte-scale datasets without managing infrastructure.43
+Governance and Metadata Layer: Dataplex is recommended to provide a unified data fabric for governance across the lakehouse. Dataplex can automatically discover, catalog, and manage metadata for data stored in both Cloud Storage and BigQuery. This enables critical capabilities like data discovery, data lineage tracking, and the enforcement of data quality and lifecycle policies, all from a single control plane.45
+This entire data lakehouse architecture will be deployed within its own dedicated GCP project and dedicated VPC, completely separate from the project containing the raw, sensitive PHI.
+
+The Multi-Perimeter Model for Secure Data Sharing
+
+The cornerstone of the security model for this two-part environment is a multi-perimeter architecture using VPC Service Controls. This creates distinct, isolated zones with a highly controlled "airlock" for data movement between them.
+Perimeter A (The "Source Vault"): This is the VPC Service Controls perimeter established in Section 3. It encloses the primary secure project containing the raw, sensitive PHI and PII. This perimeter is configured with extremely restrictive policies, allowing ingress only from trusted university networks and having no default egress.
+Perimeter B (The "Research Sandbox"): A new, second VPC Service Controls perimeter will be created. It will enclose the new project that houses the research data lakehouse (Cloud Storage, BigQuery, Dataplex). This perimeter's primary goal is to prevent the de-identified data from being exfiltrated from the research environment.
+Controlled Data Flow via Perimeter Bridge: The only permitted data flow between these two zones is the one-way transfer of de-identified data from Perimeter A to Perimeter B. This is best implemented using a VPC Service Controls Perimeter Bridge.26 A perimeter bridge is a specific configuration that allows projects in two different perimeters to communicate under a defined set of conditions. The bridge would be configured to allow only the Dataflow service account from the de-identification pipeline in Perimeter A to write data to the specific "clean" Cloud Storage bucket inside Perimeter B. All other traffic between the perimeters would be denied. This creates a highly secure, auditable, and purpose-built channel for data transfer.46
+This multi-perimeter model ensures that the raw data is never directly exposed to the research environment, and the research environment itself is a secure, contained sandbox.
+
+Secure Data Access and Collaboration for Researchers
+
+Once the de-identified data resides in the BigQuery data lakehouse within Perimeter B, it can be made available to researchers in a secure and governed manner.
+IAM for Access: Researchers will be granted IAM roles (e.g., BigQuery Data Viewer) on the BigQuery datasets, allowing them to query the data. Authentication will be handled through their standard ASU.edu identities.
+BigQuery Data Sharing: For collaboration with other departments or even trusted external research institutions, the university should leverage BigQuery's native data sharing capabilities (which fully integrate the functionality formerly known as Analytics Hub).39 This allows a data publisher (the university) to create "listings" of shared datasets. Subscribers are then granted read-only access to these datasets via a "linked dataset" in their own project. This is a powerful model because it
+shares access without copying data. The data remains in the university's BigQuery instance, and subscribers query it in place, ensuring the university retains full control and can revoke access at any time.47
+VPC Service Controls Enforcement on Shared Data: A critical benefit of this model is that all data sharing is still protected by VPC Service Controls. The linked dataset that a subscriber receives is still subject to the rules of the publisher's perimeter (Perimeter B). This means a researcher who is granted access to a dataset cannot simply run a bq cp command to copy that data to a public bucket; the perimeter will intercept and block the exfiltration attempt.47
+Data Clean Rooms for Advanced Collaboration: For future use cases involving collaboration with partners on extremely sensitive data where even joining de-identified datasets could reveal information, BigQuery data clean rooms can be utilized. A clean room provides a secure environment where two or more parties can run joint analyses on their respective datasets, but neither party can view the other's underlying raw data. All queries are run within the clean room, and only aggregated, privacy-safe results are returned.47
+This architecture provides a scalable and repeatable model for research. As new projects and collaborations arise, they can be onboarded as subscribers to the secure, de-identified data lake, all within a framework that enforces compliance and prevents data leakage.
+
+Comprehensive Logging, Monitoring, and Auditing Strategy
+
+A foundational requirement for both FedRAMP and HIPAA is the ability to continuously monitor the environment, log all relevant activities, and provide a clear audit trail to demonstrate compliance and investigate potential incidents. A passive, point-in-time approach to auditing is insufficient. The proposed architecture incorporates an active, automated strategy for logging, monitoring, and auditing.
+
+Configuring Cloud Audit Logs for Full Visibility
+
+Google Cloud provides several types of audit logs that create a comprehensive record of activity. Properly configuring these logs is the first step in building an auditable system.7
+Admin Activity Logs: These logs are enabled by default and are essential. They record all API calls that modify the configuration or metadata of resources, such as creating a VM, changing a firewall rule, or modifying an IAM policy. They answer the question, "Who did what, and when?".7
+Data Access Logs: These logs are generally disabled by default due to their potential volume, but they are mandatory for any service handling PHI or FedRAMP-controlled data. They record API calls that read the configuration or metadata of resources, as well as user-driven API calls that create, modify, or read user-provided resource data. For example, a Data Access log is generated when a user reads an object from a Cloud Storage bucket or runs a query against a BigQuery table. These logs are critical for answering, "Who accessed the data?".7
+System Event Logs: These logs record actions taken by Google Cloud systems, rather than by users, providing visibility into automated system activities.
+Policy Denied Logs: These logs are generated by default and are invaluable for security monitoring. They record an event every time a user or service is denied access to a resource due to a security policy violation. This includes denials from IAM, firewall rules, and, critically, VPC Service Controls. Reviewing these logs can help identify misconfigured applications, unauthorized access attempts, or potential attacks.7
+Recommendation: Data Access audit logs must be explicitly enabled for all in-scope services within both the primary secure project (Perimeter A) and the future research data lake project (Perimeter B). This includes enabling them for Cloud Storage, BigQuery, Cloud SQL, and any other service that will store or process sensitive information.7
+
+Centralized Log Retention and Analysis
+
+To ensure the integrity and utility of audit logs, they must be managed centrally and retained according to compliance requirements.
+Centralized Log Sinks: An organization-level log sink should be configured to export all audit logs from the entire organization, or at a minimum from the folders containing the secure workloads, to a dedicated, centralized logging project.49 This is a critical security control. It prevents project owners or administrators from disabling logging or tampering with the audit logs within their own projects, ensuring a complete and untampered record is maintained.
+Long-Term Storage and Analysis: The log sink should be configured with two destinations:
+BigQuery: Logs should be routed to a BigQuery dataset within the centralized logging project. BigQuery provides a powerful platform for long-term storage and advanced, SQL-based analysis of log data. Security teams can run queries to search for specific events, identify anomalous access patterns, and generate custom reports for compliance audits.51
+Cloud Storage: For long-term archival to meet strict retention mandates (e.g., the HIPAA requirement to retain records for at least six years), the sink should also route logs to a Cloud Storage bucket.29 This bucket must be configured with a
+Bucket Lock retention policy, which makes the log data immutable for the specified retention period, preventing it from being deleted or modified even by privileged administrators.35
+
+Continuous Compliance Monitoring with Security Command Center (SCC)
+
+While audit logs provide the raw evidence, a tool is needed to continuously analyze the environment's state and interpret it in the context of compliance frameworks.
+Recommendation: ASU must activate Security Command Center (SCC) at the Premium Tier for their organization. The Premium tier includes the advanced features necessary for vulnerability detection and compliance monitoring.52
+SCC acts as a centralized risk management platform. Its built-in services continuously scan the GCP environment and provide a unified view of the security posture. For compliance, its most important features are:
+Security Health Analytics: This service automatically scans for thousands of potential misconfigurations and vulnerabilities across the GCP environment. Examples include publicly exposed Cloud Storage buckets, overly permissive firewall rules, disabled MFA for admin accounts, or unencrypted database instances.6
+Compliance Dashboards: The true power of SCC for this use case is its ability to map the findings from its detectors to the specific controls of major compliance standards. SCC includes built-in support for benchmarks that map to NIST 800-53 (the basis for FedRAMP) and HIPAA.6
+When SCC detects a misconfiguration, it not only creates a finding but also flags the specific FedRAMP or HIPAA control that is out of compliance. This provides the university's security team with an at-a-glance, real-time dashboard of their compliance posture, highlighting exactly where violations exist and providing actionable recommendations for remediation.6 This transforms compliance from a periodic, manual audit activity into a continuous, automated monitoring process.
+The following table provides an example of how the proposed GCP architecture and services directly map to specific FedRAMP control families, illustrating how this design can be presented to auditors.
+FedRAMP Control Family
+NIST 800-53 Control ID
+Control Description
+GCP Implementation
+Source Reference
+Access Control (AC)
+AC-4
+Information Flow Enforcement
+VPC Service Controls Egress/Ingress Rules and Perimeter Bridge to control data flow between perimeters and to external resources.
+5
+Access Control (AC)
+AC-17(3)
+Remote Access | Managed Access Control Points
+On-premises access is managed via a dedicated HA-VPN, with all API traffic routed through the VPC and the restricted.googleapis.com VIP for policy enforcement.
+5
+System and Communications Protection (SC)
+SC-7
+Boundary Protection
+A multi-layered boundary is established using the VPC Service Controls Perimeter, a dedicated VPC network, and granular VPC firewall rules.
+2
+System and Communications Protection (SC)
+SC-28
+Protection of Information at Rest
+Default at-rest encryption for all services, augmented with Customer-Managed Encryption Keys (CMEK) via Cloud KMS for enhanced control over PHI.
+29
+Audit and Accountability (AU)
+AU-2
+Audit Events
+Cloud Audit Logs (Admin Activity, Data Access, System Event, Policy Denied) are enabled for all in-scope services to capture all relevant events.
+7
+Audit and Accountability (AU)
+AU-11
+Audit Record Retention
+Centralized Log Sinks export all audit records to a locked Cloud Storage bucket, enforcing immutable retention for the required period (e.g., 6+ years).
+29
+Configuration Management (CM)
+CM-6
+Configuration Settings
+Assured Workloads for FedRAMP is used to create a folder that programmatically enforces baseline configurations and prevents non-compliant settings.
+1
+System and Information Integrity (SI)
+SI-4
+Information System Monitoring
+Security Command Center Premium is activated to continuously scan for system misconfigurations, vulnerabilities, and threats, providing real-time compliance posture monitoring.
+6
+
+This integrated system of automated enforcement (Assured Workloads), comprehensive evidence collection (Cloud Audit Logs), and continuous automated monitoring (Security Command Center) creates a powerful and defensible compliance framework. It allows the university to maintain a provable state of compliance over time, significantly reducing the manual effort and risk associated with managing a complex, regulated cloud environment.
+
+Implementation Roadmap and Final Recommendations
+
+This final section synthesizes all preceding analysis into a clear, actionable plan for implementation, along with a consolidated list of the key architectural recommendations.
+
+Phased Implementation Roadmap
+
+A phased approach is recommended to manage complexity and ensure a successful deployment. The initial one-day engagement should focus on finalizing the architectural design and laying the critical groundwork.
+Immediate (1-Day Engagement): Architectural Finalization and Foundation
+Conduct a final review of this architectural design with all university stakeholders to achieve sign-off.
+Within the Google Cloud organization, create the new Assured Workloads folder with the FedRAMP Moderate control package selected. This is the critical first step that establishes the compliant foundation.13
+Create the new, dedicated GCP project for the secure workload within the Assured Workloads folder.
+Provision the new dedicated VPC network within this project.
+Deploy the initial VPC Service Controls perimeter in Dry-Run Mode around the new project.4
+Configure the centralized log sink to begin capturing all audit logs, including the VPC-SC dry-run violation logs, for analysis.
+Phase 1 (Next 1-4 Weeks): Secure Environment Build-out and Initial Workload Migration
+Thoroughly analyze the dry-run logs to identify all legitimate access patterns from users, applications, and on-premises systems.25
+Refine and finalize all Access Levels, Ingress Rules, and Egress Rules based on the dry-run analysis.
+Switch the VPC Service Controls perimeter from Dry-Run to Enforced Mode.
+Implement the full hybrid connectivity pattern, including the on-premises DNS changes and Cloud Router configuration for the restricted.googleapis.com VIP.27
+Activate Security Command Center Premium at the organization level and configure dashboards for monitoring the new environment's compliance posture.6
+Begin migrating the initial workloads, such as the SFTP replacement and initial data stores, into the newly secured and fully operational environment.
+Phase 2 (2-6 Months): Research Data Lake Deployment
+Design, build, and test the data de-identification pipeline using Dataflow and Sensitive Data Protection.41
+Deploy the second dedicated project, VPC, and VPC Service Controls perimeter (Perimeter B) that will host the research data lakehouse.
+Establish the Perimeter Bridge to create the secure, controlled "airlock" for de-identified data to flow from Perimeter A to Perimeter B.26
+Deploy the data lakehouse components: Cloud Storage buckets for de-identified data, BigQuery for analytics, and Dataplex for governance.44
+Begin onboarding initial research groups, granting them secure access to de-identified datasets via BigQuery's data sharing capabilities.47
+
+Consolidated List of Final Recommendations
+
+Foundation: Immediately create a new Assured Workloads folder with the FedRAMP Moderate control package to programmatically enforce compliance.
+Network Isolation: Do not use the existing Shared VPC. Instead, create a new Dedicated VPC within a new, dedicated project for the secure workload to ensure maximum isolation and auditability.
+Data Exfiltration Prevention: Implement VPC Service Controls by creating a service perimeter around the new project, initially in Dry-Run mode, to prevent unauthorized data movement.
+Hybrid Security: Secure on-premises access by routing all API traffic through the restricted.googleapis.com VIP, fully integrating the hybrid connection with the VPC Service Controls perimeter.
+HIPAA Compliance: Review and accept the Google Cloud Business Associate Agreement (BAA) before handling any PHI. Implement technical best practices, including the use of Customer-Managed Encryption Keys (CMEK) for enhanced data protection.
+Logging: Enable Data Access audit logs for all services handling sensitive data and configure an organization-level log sink to route all logs to a central, immutable logging project.
+Monitoring: Activate Security Command Center Premium to enable continuous, automated monitoring of the environment against FedRAMP and HIPAA compliance benchmarks.
+Future Research: Plan for a multi-perimeter architecture for the Phase 2 data lake, using a de-identification pipeline as a secure airlock to provide researchers with access to non-PHI data in a separate, secure sandbox.
+
+Conclusion: A Defensible and Future-Ready Architecture
+
+The proposed multi-layered architecture provides a comprehensive and robust solution to the university's complex security and compliance challenges. By establishing Assured Workloads as the non-negotiable foundation, utilizing a dedicated VPC for strict isolation, and deploying VPC Service Controls as a powerful data exfiltration shield, the design creates a highly defensible environment that directly maps to the requirements of FedRAMP Moderate and HIPAA. The integrated strategy for logging and continuous monitoring with Security Command Center transforms compliance from a periodic burden into a proactive, automated discipline.
+This architecture not only solves the immediate challenge of hosting a secure workload but also provides a scalable, secure, and future-proof platform. The phased plan for a research data lake, built upon principles of data de-identification and multi-perimeter security, will empower the university's researchers and collaborators, unlocking the immense value of health and sciences data while upholding the highest standards of privacy and security. This design represents a best-practice implementation of Google Cloud's security portfolio, enabling Arizona State University to pursue its mission-critical research with confidence.
+Works cited
+FedRAMP Compliance | Google Cloud, accessed June 26, 2025, https://cloud.google.com/security/compliance/fedramp
+Should you deploy a Shared VPC in GCP? - MakeCloud, accessed June 26, 2025, https://makecloud.io/insights/should-you-deploy-a-shared-vpc-in-gcp/
+Best practices and reference architectures for VPC design - Google Cloud, accessed June 26, 2025, https://cloud.google.com/architecture/best-practices-vpc-design
+VPC Service Controls - A step by step guide - Xebia, accessed June 26, 2025, https://xebia.com/blog/vpc-service-controls-step-by-step-guide/
+Overview of VPC Service Controls - Google Cloud, accessed June 26, 2025, https://cloud.google.com/vpc-service-controls/docs/overview
+Assess and report compliance with security standards | Security Command Center, accessed June 26, 2025, https://cloud.google.com/security-command-center/docs/compliance-management
+Cloud Audit Logs overview - Google Cloud, accessed June 26, 2025, https://cloud.google.com/logging/docs/audit
+Google Cloud FedRAMP Implementation Guide, accessed June 26, 2025, https://services.google.com/fh/files/misc/google_cloud_fedramp-implementation_guide.pdf
+Understanding Baselines and Impact Levels in FedRAMP, accessed June 26, 2025, https://www.fedramp.gov/understanding-baselines-and-impact-levels/
+Google Cloud Architecture Framework : Security, Privacy and Compliance - Medium, accessed June 26, 2025, https://medium.com/@laddadamey/google-cloud-architecture-framework-security-privacy-and-compliance-f9e39eeeb9ea
+Shared responsibilities and shared fate on Google Cloud | Cloud Architecture Center, accessed June 26, 2025, https://cloud.google.com/architecture/framework/security/shared-responsibility-shared-fate
+What is Google Assured Workloads? - Sentra, accessed June 26, 2025, https://www.sentra.io/cloud-data-security-glossary/google-assured-workloads
+Assured Workloads in Google Cloud Platform - ScaleSec, accessed June 26, 2025, https://scalesec.com/blog/assured-workloads-in-google-cloud-platform
+Simplify Your Compliance With Google Cloud Assured Workloads - DZone, accessed June 26, 2025, https://dzone.com/articles/cloud-compliance-using-google-assured-workloads
+Data Boundary via Assured Workloads - Google Cloud, accessed June 26, 2025, https://cloud.google.com/security/products/assured-workloads
+Google Cloud / Fedramp - Any experiences? : r/NISTControls - Reddit, accessed June 26, 2025, https://www.reddit.com/r/NISTControls/comments/ansi9u/google_cloud_fedramp_any_experiences/
+Overview of Assured Workloads - Google Cloud, accessed June 26, 2025, https://cloud.google.com/assured-workloads/docs/overview
+Exploring Certified FedRAMP Cloud Service Providers | 2025 - Ignyte Assurance Platform, accessed June 26, 2025, https://www.ignyteplatform.com/blog/fedramp/fedramp-cloud-service-providers/
+FedRAMP Marketplace, accessed June 26, 2025, https://marketplace.fedramp.gov/
+Se ing up a FedRAMP Aligned Three-Tier Workload on Google Cloud, accessed June 26, 2025, https://services.google.com/fh/files/misc/fedramp_aligned_workload_solution_guide.pdf
+Google Cloud FedRAMP implementation guide | Cloud Architecture Center, accessed June 26, 2025, https://cloud.google.com/architecture/fedramp-implementation-guide
+VPC Service Controls Basic Tutorial I | Google Codelabs, accessed June 26, 2025, https://codelabs.developers.google.com/codelabs/vpc-sc-beginnerlab-1
+VPC Service Controls - Experiences? : r/googlecloud - Reddit, accessed June 26, 2025, https://www.reddit.com/r/googlecloud/comments/vngho5/vpc_service_controls_experiences/
+What are the best practises in managing GCP VPC Service control (VPC SC) rules - Reddit, accessed June 26, 2025, https://www.reddit.com/r/googlecloud/comments/1bejc80/what_are_the_best_practises_in_managing_gcp_vpc/
+Best practices for enabling VPC Service Controls - Google Cloud, accessed June 26, 2025, https://cloud.google.com/vpc-service-controls/docs/enable
+Enhance security with VPC Service Controls | Ads Data Hub - Google for Developers, accessed June 26, 2025, https://developers.google.com/ads-data-hub/guides/vpc-sc
+Private Google Access with VPC Service Controls, accessed June 26, 2025, https://cloud.google.com/vpc-service-controls/docs/private-connectivity
+VPC in AWS and GCP: How are they fundamentally different? - KubeBlogs, accessed June 26, 2025, https://www.kubeblogs.com/vpc-in-aws-and-gcp/
+HIPAA Compliance on Google Cloud | GCP Security, accessed June 26, 2025, https://cloud.google.com/security/compliance/hipaa
+Is Google Cloud HIPAA Compliant? - Compliancy Group, accessed June 26, 2025, https://compliancy-group.com/is-google-cloud-hipaa-compliant/
+HIPAA - Compliance | Google Cloud, accessed June 26, 2025, https://cloud.google.com/security/compliance/hipaa-compliance
+HIPAA Compliance with Google Workspace and Cloud Identity, accessed June 26, 2025, https://support.google.com/a/answer/3407054?hl=en
+Is Google Cloud Platform HIPAA Compliant? - Adelia Risk, accessed June 26, 2025, https://adeliarisk.com/google-cloud-platform-hipaa-compliant/
+Is Google Cloud Platform HIPAA Compliant?, accessed June 26, 2025, https://www.hipaajournal.com/google-cloud-platform-hipaa-compliant/
+24 Google Cloud Platform (GCP) security best practices - Sysdig, accessed June 26, 2025, https://sysdig.com/learn-cloud-native/24-google-cloud-platform-gcp-security-best-practices/
+Hybrid Connectivity: Introduction to VPN in GCP | by Sadok Smine | Medium, accessed June 26, 2025, https://medium.com/@sadoksmine8/hybrid-connectivity-introduction-to-vpn-in-gcp-cd5f16833202
+Cloud Data Lake Protection - Encryption Consulting, accessed June 26, 2025, https://www.encryptionconsulting.com/cloud-data-lake-protection/
+Methods for De-identification of PHI - HHS.gov, accessed June 26, 2025, https://www.hhs.gov/hipaa/for-professionals/special-topics/de-identification/index.html
+FHIR Data De-identification using Cloud Healthcare API(Part -2) - Medium, accessed June 26, 2025, https://medium.com/google-cloud/fhir-data-de-identification-using-cloud-healthcare-api-part-2-6af3fa34cc01
+De-identifying sensitive data | Sensitive Data Protection Documentation - Google Cloud, accessed June 26, 2025, https://cloud.google.com/sensitive-data-protection/docs/deidentify-sensitive-data
+De-identification and re-identification of PII in large-scale datasets using Sensitive Data Protection | Cloud Architecture Center | Google Cloud, accessed June 26, 2025, https://cloud.google.com/architecture/de-identification-re-identification-pii-using-cloud-dlp
+What is a data lakehouse, and how does it work? | Google Cloud, accessed June 26, 2025, https://cloud.google.com/discover/what-is-a-data-lakehouse
+Building a Data Lakehouse on Google Cloud Platform, accessed June 26, 2025, https://services.google.com/fh/files/misc/building-a-data-lakehouse.pdf
+Building a Modern Data Lake in Google Cloud Platform (GCP) - CloudThat Resources, accessed June 26, 2025, https://www.cloudthat.com/resources/blog/building-a-modern-data-lake-in-google-cloud-platform-gcp
+Implementing Data Products on Google Data Lakehouse Architecture - Medium, accessed June 26, 2025, https://medium.com/google-cloud/implementing-data-products-on-google-data-lakehouse-architecture-df5c5f4cc07e
+Secure data exchange with ingress and egress rules | VPC Service Controls | Google Cloud, accessed June 26, 2025, https://cloud.google.com/vpc-service-controls/docs/secure-data-exchange
+BigQuery data sharing | Analytics Hub - Google Cloud, accessed June 26, 2025, https://cloud.google.com/analytics-hub
+Logging and Monitoring in Google Cloud Platform (GCP) - DEV Community, accessed June 26, 2025, https://dev.to/adityapratapbh1/logging-and-monitoring-in-google-cloud-platform-gcp-4e3d
+GCP Cloud Logging Best Practices - Trend Micro, accessed June 26, 2025, https://www.trendmicro.com/cloudoneconformity/knowledge-base/gcp/CloudLogging/
+Logging and Monitoring in Google Cloud Platform (GCP), accessed June 26, 2025, https://cloudnativejourney.wordpress.com/2023/11/15/logging-and-monitoring-in-google-cloud-platform-gcp/
+[CyberSec] How to Implement a Security Logging Plan in Google Cloud with Splunk Integration: Best Practices and GCP Services | by Pietro Romano / SecBeret | Medium, accessed June 26, 2025, https://medium.com/@tribal.secberet/cybersec-how-to-implement-a-security-logging-plan-in-google-cloud-with-splunk-integration-best-311798e4e039
+Security Command Center overview | Google Cloud, accessed June 26, 2025, https://cloud.google.com/security-command-center/docs/security-command-center-overview

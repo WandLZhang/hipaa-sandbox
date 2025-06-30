@@ -34,7 +34,7 @@ You must have these roles at the **Organization** level:
 
 ```bash
 # Check if tools are installed
-gcloud version           # Google Cloud SDK
+gcloud version          # Google Cloud SDK
 gsutil version          # Cloud Storage CLI
 bq version              # BigQuery CLI
 curl --version          # HTTP client
